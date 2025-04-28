@@ -13,7 +13,7 @@ import { systemPromptTemplate } from "../templates";
 import { BirdeyeProvider } from "@binkai/birdeye-provider";
 import { AlchemyProvider } from "@binkai/alchemy-provider";
 import { BinkProvider } from "@binkai/bink-provider";
-import { BnbProvider } from "@binkai/rpc-provider";
+import { BnbProvider, SolanaProvider } from "@binkai/rpc-provider";
 import {
   Agent,
   Wallet,
@@ -35,6 +35,7 @@ import { BridgePlugin } from "@binkai/bridge-plugin";
 import { WalletPlugin } from "@binkai/wallet-plugin";
 import { StakingPlugin } from "@binkai/staking-plugin";
 import { ThenaProvider } from "@binkai/thena-provider";
+import { JupiterProvider } from "@binkai/jupiter-provider";
 import { getConfig, validateBnbConfig } from "../environment";
 import { v4 as uuidv4 } from "uuid";
 import { Connection } from "@solana/web3.js";
@@ -46,6 +47,7 @@ export class ExecuteTransactionAction {
   private alchemyApi: AlchemyProvider;
   private binkProvider: BinkProvider;
   private bnbProvider: BnbProvider;
+  private solanaProvider: SolanaProvider;
   private bscProvider: JsonRpcProvider;
   private config: ReturnType<typeof getConfig>;
 
@@ -109,7 +111,9 @@ export class ExecuteTransactionAction {
     this.bnbProvider = new BnbProvider({
       rpcUrl: this.config.BSC_RPC_URL,
     });
-
+    this.solanaProvider = new SolanaProvider({
+      rpcUrl: this.config.SOLANA_RPC_URL,
+    });
     this.bscProvider = new JsonRpcProvider(this.config.BSC_RPC_URL);
   }
 
@@ -145,19 +149,17 @@ export class ExecuteTransactionAction {
       const bridgePlugin = new BridgePlugin();
       const walletPlugin = new WalletPlugin();
       const stakingPlugin = new StakingPlugin();
+      const jupiter = new JupiterProvider(new Connection(this.config.SOLANA_RPC_URL))
       const thena = new ThenaProvider(this.bscProvider, bscChainId);
       const debridge = new deBridgeProvider(
-        [this.bscProvider, new Connection(this.config.SOLANA_RPC_URL)],
-        56,
-        7565164,
-      );
 
+        [this.bscProvider, new Connection(this.config.SOLANA_RPC_URL)],56,7565164,);
       // Initialize the swap plugin with supported chains and providers
       await Promise.all([
         swapPlugin.initialize({
           defaultSlippage: 0.5,
           defaultChain: "bnb",
-          providers: [pancakeswap, fourMeme, thena, oku, kyber],
+          providers: [pancakeswap, fourMeme, thena, oku, kyber, jupiter],
           supportedChains: ["bnb", "ethereum", "solana"],
         }),
         tokenPlugin.initialize({
@@ -170,7 +172,7 @@ export class ExecuteTransactionAction {
         }),
         await walletPlugin.initialize({
           defaultChain: "bnb",
-          providers: [this.bnbProvider, this.birdeyeApi, this.alchemyApi],
+          providers: [this.bnbProvider, this.birdeyeApi, this.alchemyApi, this.solanaProvider],
           supportedChains: ["bnb", "solana", "ethereum"],
         }),
         await stakingPlugin.initialize({
@@ -210,7 +212,6 @@ export class ExecuteTransactionAction {
       await agent.registerPlugin(tokenPlugin);
       await agent.registerPlugin(walletPlugin);
       await agent.registerPlugin(stakingPlugin);
-      await agent.registerPlugin(knowledgePlugin);
       await agent.registerPlugin(bridgePlugin);
 
       return agent;
@@ -256,7 +257,7 @@ export class ExecuteTransactionAction {
 export const executeTransactionAction = {
   name: "EXECUTE_TRANSACTION",
   description:
-    "Execute blockchain transactions across multiple networks (BNB Chain, Ethereum, Solana) with support for various operations including token swaps, staking, and bridging. The tool integrates with multiple DEXs and protocols to provide the best execution routes and prices.",
+    "Execute blockchain transactions across multiple networks (BNB Chain, Ethereum, Solana) with support for various operations including token swaps, transfer, staking, and bridging (cross-chain). The tool integrates with multiple DEXs and protocols to provide the best execution routes and prices.",
   handler: async (
     runtime: IAgentRuntime,
     message: Memory,
@@ -396,6 +397,21 @@ export const executeTransactionAction = {
         user: "{{agent}}",
         content: {
           text: "Swap 0.001 USDC for token 0x1234 on BSC",
+          action: "EXECUTE_TRANSACTION",
+        },
+      },
+    ],
+    [
+      {
+        user: "{{user1}}",
+        content: {
+          text: "Swap cross chain 0.01 BNB for SOL",
+        },
+      },
+      {
+        user: "{{agent}}",
+        content: {
+          text: "Bridge 0.01 BNB for SOL",
           action: "EXECUTE_TRANSACTION",
         },
       },
